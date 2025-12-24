@@ -1,0 +1,11 @@
+# Compiled files
+*.o
+*.out
+*.exe
+build/
+
+# Editor config
+.vscode/
+
+# OS files
+.DS_Store
