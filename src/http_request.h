@@ -4,10 +4,12 @@
 
 using namespace std;
 
-struct HttpRequest {
+struct HttpRequest
+{
     string method;
     string path;
     string version;
     unordered_map<string, string> headers;
     string body;
+    string client_ip;
 };

@@ -16,6 +16,7 @@
 #include <signal.h>
 #include <atomic>
 #include "middleware.h"
+#include "middleware_setup.h"
 
 using namespace std;
 
@@ -26,10 +27,11 @@ atomic<bool> running(true);
 #define THREAD_COUNT 4
 
 Router router;
+unordered_map<int, string> client_ip_map;
 
 void handleSignal(int)
 {
-    std::cout << "\nGraceful shutdown initiated..." << std::endl;
+    cout << "\nGraceful shutdown initiated..." << std::endl;
     running = false;
 }
 
@@ -43,6 +45,7 @@ struct Task
 {
     int client_fd;
     string request;
+    string client_ip;
 };
 
 queue<Task> taskQueue;
@@ -69,15 +72,23 @@ void worker()
 
         // Parse request
         HttpRequest req = HttpParser::parse(task.request);
-        cout << "\n---------Client Request-----------" << endl;
-        cout << "Method : " << req.method << endl;
-        cout << "Route Requested : " << req.path << endl;
-        cout << endl;
+        req.client_ip = task.client_ip;
+
+        cout << "\n-----------Client Request-----------" << endl;
 
         // Build response
         HttpResponse res;
 
         runMiddlewares(req, res);
+
+        if (!res.body.empty())
+        {
+            string responseStr = res.toString();
+            write(task.client_fd, responseStr.c_str(), responseStr.size());
+            close(task.client_fd);
+            client_ip_map.erase(task.client_fd);
+            continue;
+        }
 
         bool found = router.route(req, res);
 
@@ -106,6 +117,7 @@ void worker()
         string responseStr = res.toString();
         write(task.client_fd, responseStr.c_str(), responseStr.size());
         close(task.client_fd);
+        client_ip_map.erase(task.client_fd);
     }
 }
 
@@ -141,23 +153,10 @@ int main()
         workers.emplace_back(worker);
     }
 
-    cout << "Phase 7 server running on http://localhost:8080\n";
+    cout << "Server running on http://localhost:8080\n";
 
-    registerRoutes(router);
-
-    addMiddleware([](HttpRequest& req, HttpResponse& res) {
-    auto start = std::chrono::high_resolution_clock::now();
-
-    cout << "[REQ] " << req.method << " " << req.path << endl;
-
-    // attach timestamp for later use
-    req.headers["__start_time"] =
-        std::to_string(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                start.time_since_epoch()
-            ).count()
-        );
-    });
+    registerRoutes(router); // Registering the routes
+    registerMiddlewares();  // Registering the middlewares
 
     // Event loop
     while (running)
@@ -173,11 +172,19 @@ int main()
             {
                 while (true)
                 {
-                    int client_fd = accept(server_fd, NULL, NULL);
+                    sockaddr_in client_addr;
+                    socklen_t client_len = sizeof(client_addr);
+
+                    int client_fd = accept(server_fd, (sockaddr *)&client_addr, &client_len);
+
                     if (client_fd < 0)
                         break;
 
                     make_non_blocking(client_fd);
+
+                    char ip_str[INET_ADDRSTRLEN];
+                    inet_ntop(AF_INET, &client_addr.sin_addr, ip_str, sizeof(ip_str));
+                    client_ip_map[client_fd] = ip_str;
 
                     epoll_event ev;
                     ev.events = EPOLLIN;
@@ -194,12 +201,14 @@ int main()
                 if (bytes <= 0)
                 {
                     close(fd);
+                    client_ip_map.erase(fd);
                 }
                 else
                 {
                     Task task;
                     task.client_fd = fd;
                     task.request = string(buffer, bytes);
+                    task.client_ip = client_ip_map[fd];
 
                     {
                         lock_guard<mutex> lock(queueMutex);
@@ -210,7 +219,8 @@ int main()
             }
         }
     }
-    running = false;
+
+    running = false; // closing the Server
     cv.notify_all();
 
     for (auto &t : workers)
