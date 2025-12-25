@@ -25,7 +25,7 @@ static const int WINDOW_SECONDS = 10;
 void registerMiddlewares()
 {
 
-    // 🔹 Logging + timing middleware
+    // Logging + timing middleware
     addMiddleware([](HttpRequest &req, HttpResponse &)
                   {
         auto now = chrono::high_resolution_clock::now();
@@ -35,7 +35,7 @@ void registerMiddlewares()
 
         cout << "[REQ] " << req.method << " " << req.path << endl; });
 
-    // 🔹 Rate limiting middleware
+    //Rate limiting middleware
     addMiddleware([](HttpRequest &req, HttpResponse &res)
                   {
         string client = req.client_ip;  // simple identifier

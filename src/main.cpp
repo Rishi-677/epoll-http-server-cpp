@@ -17,6 +17,7 @@
 #include <atomic>
 #include "middleware.h"
 #include "middleware_setup.h"
+#include "metrics.h"
 
 using namespace std;
 
@@ -70,52 +71,46 @@ void worker()
             taskQueue.pop();
         }
 
-        // Parse request
+        active_connections++;
+
+        auto start = chrono::high_resolution_clock::now();
+
         HttpRequest req = HttpParser::parse(task.request);
         req.client_ip = task.client_ip;
 
-        cout << "\n-----------Client Request-----------" << endl;
-
-        // Build response
         HttpResponse res;
 
         runMiddlewares(req, res);
 
         if (!res.body.empty())
         {
-            string responseStr = res.toString();
-            write(task.client_fd, responseStr.c_str(), responseStr.size());
-            close(task.client_fd);
-            client_ip_map.erase(task.client_fd);
-            continue;
+            write(task.client_fd, res.toString().c_str(), res.toString().size());
         }
-
-        bool found = router.route(req, res);
-
-        auto end = std::chrono::high_resolution_clock::now();
-        auto end_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                          end.time_since_epoch())
-                          .count();
-
-        if (req.headers.count("__start_time"))
+        else
         {
-            long start_us = stol(req.headers["__start_time"]);
-            cout << "[DONE] " << req.method << " "
-                 << req.path << " in "
-                 << (end_us - start_us) << " µs\n";
+            bool found = router.route(req, res);
+
+            if (!found)
+            {
+                res.status = 404;
+                res.statusText = "Not Found";
+                res.body = "404 Route Not Found\n";
+            }
+
+            write(task.client_fd, res.toString().c_str(), res.toString().size());
         }
 
-        if (!found)
-        {
-            res.status = 404;
-            res.statusText = "Not Found";
-            res.headers["Content-Type"] = "text/plain";
-            res.body = "404 Route Not Found\n";
-        }
+        auto end = chrono::high_resolution_clock::now();
+        auto latency =
+            chrono::duration_cast<chrono::microseconds>(end - start).count();
 
-        // Send response
-        string responseStr = res.toString();
-        write(task.client_fd, responseStr.c_str(), responseStr.size());
+        cout << "[DONE] " << req.method << " " << req.path
+             << " in " << latency << " us" << endl;
+
+        record_request(latency);
+
+        active_connections--;
+
         close(task.client_fd);
         client_ip_map.erase(task.client_fd);
     }
