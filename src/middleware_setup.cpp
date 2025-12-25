@@ -29,9 +29,9 @@ void registerMiddlewares()
     addMiddleware([](HttpRequest &req, HttpResponse &)
                   {
         auto now = chrono::high_resolution_clock::now();
-        req.headers["__start_time"] =
-            to_string(chrono::duration_cast<chrono::microseconds>(
-                now.time_since_epoch()).count());
+        auto start = chrono::high_resolution_clock::now();
+        long start_us = chrono::duration_cast<chrono::microseconds>(start.time_since_epoch()).count();
+        req.headers["start_time"] = to_string(start_us);
 
         cout << "[REQ] " << req.method << " " << req.path << endl; });
 

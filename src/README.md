@@ -55,10 +55,10 @@ g++ src/main.cpp \src/routes.cpp \src/middleware.cpp \src/middleware_setup.cpp \
 ### Test the Server
 
 ```bash
-curl http://localhost:2205
-curl http://localhost:2205/hello
-curl http://localhost:2205/metrics
-curl http://localhost:2205/unknown
+curl http://localhost:2025
+curl http://localhost:2025/hello
+curl http://localhost:2025/metrics
+curl http://localhost:2025/unknown
 ```
 
 ### Stop the Server

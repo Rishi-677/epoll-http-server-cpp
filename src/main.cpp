@@ -23,7 +23,7 @@ using namespace std;
 
 atomic<bool> running(true);
 
-#define PORT 8080
+#define PORT 2025
 #define MAX_EVENTS 1000
 #define THREAD_COUNT 4
 
@@ -53,6 +53,21 @@ queue<Task> taskQueue;
 mutex queueMutex;
 condition_variable cv;
 
+long compute_latency_from_header(const HttpRequest& req) 
+{
+    if (!req.headers.count("start_time"))
+        return 0;
+
+    long start_us = stol(req.headers.at("start_time"));
+
+    auto now = chrono::high_resolution_clock::now();
+    long now_us = chrono::duration_cast<chrono::microseconds>(
+        now.time_since_epoch()
+    ).count();
+
+    return now_us - start_us;
+}
+
 void worker()
 {
     while (true)
@@ -72,8 +87,6 @@ void worker()
         }
 
         active_connections++;
-
-        auto start = chrono::high_resolution_clock::now();
 
         HttpRequest req = HttpParser::parse(task.request);
         req.client_ip = task.client_ip;
@@ -100,9 +113,7 @@ void worker()
             write(task.client_fd, res.toString().c_str(), res.toString().size());
         }
 
-        auto end = chrono::high_resolution_clock::now();
-        auto latency =
-            chrono::duration_cast<chrono::microseconds>(end - start).count();
+        long latency = compute_latency_from_header(req);
 
         cout << "[DONE] " << req.method << " " << req.path
              << " in " << latency << " us" << endl;
@@ -148,7 +159,7 @@ int main()
         workers.emplace_back(worker);
     }
 
-    cout << "Server running on http://localhost:8080\n";
+    cout << "Server running on http://localhost:2025\n";
 
     registerRoutes(router); // Registering the routes
     registerMiddlewares();  // Registering the middlewares
