@@ -1,4 +1,5 @@
 # Compiled files
+server
 *.o
 *.out
 *.exe
